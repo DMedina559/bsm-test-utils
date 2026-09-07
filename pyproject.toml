@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bedrock-server-dummy"
+version = "0.1.0"
+description = "A dummy bedrock server for testing integration with bedrock server manager"
+authors = [
+    { name = "Author", email = "author@example.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/example/bedrock-server-dummy"
+Repository = "https://github.com/example/bedrock-server-dummy.git"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["bedrock_server_dummy"]
+
+[tool.setuptools.package-data]
+"bedrock_server_dummy" = ["data/*"]
