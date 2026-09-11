@@ -111,12 +111,39 @@ def test_mcworld_import(valid_mcworld_zip, mock_http_server):
     # ... assert your application handles the URL correctly
 ```
 
+### 4. End-to-End Download Testing
+
+For applications like `bedrock-server-manager` that scrape the official download endpoint, you can use the `mock_bedrock_api` fixture. It sets up a localized mock of `/api/v1.0/download/links` containing dynamically generated mock zips for stable and preview releases on both Linux and Windows.
+
+```python
+import json
+import urllib.request
+
+def test_bedrock_api_mock(mock_bedrock_api):
+    # The fixture yields the mock_http_server instance, but with the API already populated
+    api_url = f"{mock_bedrock_api.url}/api/v1.0/download/links"
+    
+    # 1. Fetch the JSON as your manager would
+    req = urllib.request.Request(api_url)
+    with urllib.request.urlopen(req) as response:
+        data = json.loads(response.read().decode())
+        
+    links = {item["downloadType"]: item["downloadUrl"] for item in data["result"]["links"]}
+    
+    # 2. Download a platform specific zip
+    linux_url = links["serverBedrockLinux"]
+    dest = mock_bedrock_api.directory / "downloaded.zip"
+    urllib.request.urlretrieve(linux_url, dest)
+    assert dest.exists()
+```
+
 ### Reference: Available Pytest Fixtures
 
 | Fixture Name | Return Type | Description |
 | :--- | :--- | :--- |
 | `mock_http_server` | `MockHTTPServer` | Yields a running multithreaded HTTP server bound to `127.0.0.1`. Automatically cleans up after the test. Access the URL via `.url` and its root directory via `.directory`. |
-| `dummy_server_zip` | `Callable` | A factory function: `def _factory(target_dir, version="...", is_preview=False, is_windows=None)`. Returns a `Path` to the generated server zip. |
+| `mock_bedrock_api` | `MockHTTPServer` | Yields a `mock_http_server` pre-populated with a mocked `/api/v1.0/download/links` endpoint serving generated server zips. |
+| `dummy_server_zip` | `Callable` | A factory function: `def _factory(target_dir, version="...", is_preview=False, is_windows=None, filename=None)`. Returns a `Path` to the generated server zip. |
 | `valid_behavior_pack` | `Path` | Path to a valid behavior pack directory. |
 | `invalid_behavior_pack` | `Path` | Path to an invalid behavior pack directory (missing UUID). |
 | `valid_resource_pack` | `Path` | Path to a valid resource pack directory. |
@@ -147,6 +174,8 @@ create_mcaddon(
 )
 
 # 3. Create a world with embedded addons
+# This will also automatically generate world_behavior_packs.json 
+# and world_resource_packs.json mapping the generated packs.
 create_mcworld(
     "./worlds", 
     name="My World", 

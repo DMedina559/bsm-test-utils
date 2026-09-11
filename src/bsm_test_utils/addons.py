@@ -184,14 +184,49 @@ def create_mcworld(
             bp_dir = world_dir / "behavior_packs"
             rp_dir = world_dir / "resource_packs"
             
+            world_behavior_packs = []
+            world_resource_packs = []
+            
             for pack_kwargs in packs:
                 pack_kwargs["as_zip"] = False  # worlds usually contain extracted folders
                 pack_type = pack_kwargs.get("pack_type", "data")
                 
                 if pack_type == "data" or pack_type == "script":
-                    create_addon(bp_dir, **pack_kwargs)
+                    pack_path = create_addon(bp_dir, **pack_kwargs)
+                    manifest_path = pack_path / "manifest.json"
+                    if manifest_path.exists():
+                        with open(manifest_path, "r") as f:
+                            try:
+                                manifest_data = json.load(f)
+                                if "header" in manifest_data and "uuid" in manifest_data["header"] and "version" in manifest_data["header"]:
+                                    world_behavior_packs.append({
+                                        "pack_id": manifest_data["header"]["uuid"],
+                                        "version": manifest_data["header"]["version"]
+                                    })
+                            except json.JSONDecodeError:
+                                pass
                 else:
-                    create_addon(rp_dir, **pack_kwargs)
+                    pack_path = create_addon(rp_dir, **pack_kwargs)
+                    manifest_path = pack_path / "manifest.json"
+                    if manifest_path.exists():
+                        with open(manifest_path, "r") as f:
+                            try:
+                                manifest_data = json.load(f)
+                                if "header" in manifest_data and "uuid" in manifest_data["header"] and "version" in manifest_data["header"]:
+                                    world_resource_packs.append({
+                                        "pack_id": manifest_data["header"]["uuid"],
+                                        "version": manifest_data["header"]["version"]
+                                    })
+                            except json.JSONDecodeError:
+                                pass
+            
+            # Write world pack manifests
+            if world_behavior_packs:
+                with open(world_dir / "world_behavior_packs.json", "w") as f:
+                    json.dump(world_behavior_packs, f, indent=4)
+            if world_resource_packs:
+                with open(world_dir / "world_resource_packs.json", "w") as f:
+                    json.dump(world_resource_packs, f, indent=4)
                     
         # Zip it up as .mcworld
         with zipfile.ZipFile(mcworld_path, "w") as mcworld_zf:

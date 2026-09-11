@@ -10,7 +10,8 @@ def create_server_zip(
     target_dir: Union[str, Path],
     version: str = "1.20.0.01",
     is_preview: bool = False,
-    is_windows: bool = None
+    is_windows: bool = None,
+    filename: str = None
 ) -> Path:
     """
     Creates a mock bedrock server zip release.
@@ -29,9 +30,12 @@ def create_server_zip(
     if is_windows is None:
         is_windows = platform.system() == "Windows"
     
-    os_name = "win" if is_windows else "ubuntu" # Standard naming convention uses ubuntu for linux
-    preview_tag = "-preview" if is_preview else ""
-    zip_name = f"bedrock-server-{version}{preview_tag}-{os_name}.zip"
+    if filename:
+        zip_name = filename
+    else:
+        os_name = "win" if is_windows else "linux"
+        preview_tag = "-preview" if is_preview else ""
+        zip_name = f"bedrock-server-{version}{preview_tag}-{os_name}.zip"
     zip_path = target / zip_name
     
     binary_name = "bedrock_server.exe" if is_windows else "bedrock_server"
