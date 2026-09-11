@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,14 @@ import (
 )
 
 func main() {
+	mockCrash := flag.Bool("mock-crash", false, "Simulate a server crash immediately upon startup")
+	flag.Parse()
+
+	if *mockCrash {
+		logPrint("ERROR", "CRASH: Segfault simulating server failure")
+		os.Exit(1)
+	}
+
 	// Startup sequence matching real logs
 	fmt.Println("NO LOG FILE! - setting up server logging...")
 	logPrint("INFO", "Starting Server")
@@ -36,8 +45,9 @@ func main() {
 	time.Sleep(1 * time.Second)
 	
 	logPrint("INFO", "Opening level 'worlds/Bedrock level/db'")
-	logPrint("INFO", "Accepting clients on [::]:19132")
 	logPrint("INFO", "Pack Stack - None")
+	logPrint("INFO", "IPv4 supported, port: 19132: Used for gameplay and LAN discovery")
+	logPrint("INFO", "IPv6 supported, port: 19133: Used for gameplay")
 	logPrint("INFO", "Signed in to signaling service successfully")
 	logPrint("INFO", "Waiting for Minecraft services...")
 	
@@ -94,7 +104,10 @@ func handleDummyCommand(text string) {
 	
 	cmd := parts[1]
 	
-	if cmd == "PLAYER_JOIN" {
+	if cmd == "CRASH" {
+		logPrint("ERROR", "CRASH: Fatal runtime error encountered. Core dumped.")
+		os.Exit(1)
+	} else if cmd == "PLAYER_JOIN" {
 		player := "DummyPlayer"
 		if len(parts) >= 3 {
 			player = parts[2]

@@ -19,13 +19,14 @@ class MockHTTPServer:
 
     def start(self):
         """Starts the server in a background thread."""
+
         class Handler(http.server.SimpleHTTPRequestHandler):
             def __init__(self, *args, directory=str(self.directory), **kwargs):
                 super().__init__(*args, directory=directory, **kwargs)
 
         self.server = socketserver.TCPServer(("", self.port), Handler)
-        self.port = self.server.server_address[1] # Update port in case it was 0
-        
+        self.port = self.server.server_address[1]  # Update port in case it was 0
+
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.daemon = True
         self.thread.start()

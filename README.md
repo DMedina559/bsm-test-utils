@@ -146,10 +146,22 @@ def test_bedrock_api_mock(mock_bedrock_api):
 | `dummy_server_zip` | `Callable` | A factory function: `def _factory(target_dir, version="...", is_preview=False, is_windows=None, filename=None)`. Returns a `Path` to the generated server zip. |
 | `valid_behavior_pack` | `Path` | Path to a valid behavior pack directory. |
 | `invalid_behavior_pack` | `Path` | Path to an invalid behavior pack directory (missing UUID). |
+| `invalid_json_pack` | `Path` | Path to an invalid behavior pack directory with a fundamentally corrupt JSON manifest. |
 | `valid_resource_pack` | `Path` | Path to a valid resource pack directory. |
 | `valid_behavior_pack_zip` | `Path` | Path to a valid behavior pack `.mcpack` file. |
 | `valid_mcaddon_zip` | `Path` | Path to a valid `.mcaddon` file (contains bundled behavior and resource packs). |
 | `valid_mcworld_zip` | `Path` | Path to a valid `.mcworld` file (contains `level.dat` and embedded addons). |
+
+### 5. Interacting with the Dummy Server
+
+The generated server binaries in `bsm-test-utils` are more than just empty files. When executed, they print logs mimicking exactly what the official Bedrock dedicated server outputs.
+
+You can also use special arguments and standard input commands to mock specific behaviors:
+
+- **Immediate Crash**: Start the server with the `--mock-crash` argument to have it print a segfault message and immediately exit with code `1`.
+- **Runtime Crash**: Send the string `__DUMMY__ CRASH` to the standard input while the server is running to simulate a random runtime panic (exits with code `1`).
+- **Player Events**: Send `__DUMMY__ PLAYER_JOIN <username>` or `__DUMMY__ PLAYER_LEAVE <username>` to generate standard player connection/disconnection logs.
+- **Graceful Shutdown**: Sending the standard Bedrock `stop` command will trigger a normal shutdown sequence resulting in an exit code `0`.
 
 ---
 
