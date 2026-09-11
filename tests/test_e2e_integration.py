@@ -40,7 +40,9 @@ def test_full_integration_flow(mock_http_server, dummy_server_zip, valid_behavio
         zf.extractall(extract_dir)
         
     # 4. Asserts
-    binary_name = "bedrock_server.exe" if "win" in downloaded_zip.name else "bedrock_server"
+    # E2E runs natively, so test expects the current OS binary
+    import platform
+    binary_name = "bedrock_server.exe" if platform.system() == "Windows" else "bedrock_server"
     assert (extract_dir / binary_name).exists()
     assert (extract_dir / "server.properties").exists()
     assert (extract_dir / "behavior_packs").is_dir()

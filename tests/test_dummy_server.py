@@ -8,8 +8,7 @@ def test_create_server_zip_default(tmp_path):
     zip_path = create_server_zip(tmp_path, version="1.20.10.01")
     assert zip_path.exists()
     
-    os_name = "win" if platform.system() == "Windows" else "linux"
-    assert zip_path.name == f"bedrock-server-1.20.10.01-{os_name}.zip"
+    assert zip_path.name == "bedrock-server-1.20.10.01.zip"
     
     binary_name = "bedrock_server.exe" if platform.system() == "Windows" else "bedrock_server"
     
@@ -22,5 +21,5 @@ def test_create_server_zip_default(tmp_path):
 def test_create_server_zip_preview(tmp_path):
     zip_path = create_server_zip(tmp_path, version="1.20.20.21", is_preview=True)
     assert zip_path.exists()
-    os_name = "win" if platform.system() == "Windows" else "linux"
-    assert zip_path.name == f"bedrock-server-1.20.20.21-preview-{os_name}.zip"
+    
+    assert zip_path.name == "bedrock-server-1.20.20.21.zip"

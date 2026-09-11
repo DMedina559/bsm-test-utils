@@ -33,9 +33,8 @@ def create_server_zip(
     if filename:
         zip_name = filename
     else:
-        os_name = "win" if is_windows else "linux"
-        preview_tag = "-preview" if is_preview else ""
-        zip_name = f"bedrock-server-{version}{preview_tag}-{os_name}.zip"
+        # The official API zip names are simply 'bedrock-server-{version}.zip'
+        zip_name = f"bedrock-server-{version}.zip"
     zip_path = target / zip_name
     
     binary_name = "bedrock_server.exe" if is_windows else "bedrock_server"
