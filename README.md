@@ -1,12 +1,159 @@
-# Bedrock Server Dummy
+# bsm-test-utils
 
-A dummy executable and configuration package designed to simulate a Minecraft Bedrock Dedicated Server. Used primarily for integration testing (e.g., testing the Bedrock Server Manager).
+A robust test utility package designed to simulate Minecraft Bedrock Dedicated Server environments. It is primarily used for writing comprehensive integration tests (e.g., testing the Bedrock Server Manager) by providing programmatic fixtures, HTTP download mocking, and dynamic asset generation.
 
-## Usage
+## Features
+
+- **Dynamic Server Releases:** Generate zip files mimicking official Bedrock Server releases (custom versions, preview tags).
+- **Dynamic Add-on Generation:** Programmatically build behavior packs, resource packs, and script packs. Generate them as directories or `.mcpack` zip files with optionally invalid configurations for edge-case testing.
+- **Bundle Support:** Create `.mcaddon` (bundled packs) and `.mcworld` (worlds embedded with custom `level.dat` and packs).
+- **Mock HTTP Server:** A lightweight, multithreaded `http.server` designed for testing download functionality directly in pytest, avoiding external network calls.
+- **Pytest Fixtures:** Seamlessly integrated fixtures to use these tools out-of-the-box in your test suites.
+
+## Installation
+
+```bash
+pip install bsm-test-utils
+```
+
+## Setup for Pytest
+
+To use the built-in Pytest fixtures automatically in your tests, register them in your `conftest.py` file:
 
 ```python
-from bedrock_server_dummy import setup_dummy_server
+# conftest.py
+pytest_plugins = ["bsm_test_utils.fixtures"]
+```
 
-# Copies the correct platform binary and dummy config files to the target directory.
-setup_dummy_server("/path/to/test/server_dir")
+## Detailed Pytest Guide
+
+The following examples demonstrate how to use `bsm-test-utils` to write powerful, isolated integration tests for Bedrock tooling.
+
+### 1. Mocking a Server Download
+
+Instead of hitting the real Minecraft download servers during your tests, use the `mock_http_server` and `dummy_server_zip` fixtures to generate a fake release and serve it locally.
+
+```python
+import urllib.request
+import zipfile
+from pathlib import Path
+
+def test_download_and_extract_server(mock_http_server, dummy_server_zip, tmp_path):
+    # 1. Generate the zip file directly into the mock server's directory
+    # The factory returns the Path to the generated zip file.
+    zip_path = dummy_server_zip(
+        target_dir=mock_http_server.directory, 
+        version="1.20.10.01", 
+        is_preview=False
+    )
+    
+    # 2. Construct the URL to the mock server
+    download_url = f"{mock_http_server.url}/{zip_path.name}"
+    
+    # 3. Simulate your application's download logic
+    dest_path = tmp_path / zip_path.name
+    urllib.request.urlretrieve(download_url, dest_path)
+    
+    # 4. Verify the download and extract it
+    assert dest_path.exists()
+    
+    extract_dir = tmp_path / "server"
+    with zipfile.ZipFile(dest_path, "r") as zf:
+        zf.extractall(extract_dir)
+        
+    # The dummy server contains standard config files and the platform binary
+    assert (extract_dir / "server.properties").exists()
+    assert (extract_dir / "behavior_packs").is_dir()
+```
+
+### 2. Testing Addon Management
+
+You can inject pre-built valid or invalid addons to test how your application handles importing or reading them.
+
+```python
+import json
+
+def test_addon_manifest_reading(valid_behavior_pack, invalid_behavior_pack):
+    # valid_behavior_pack is a Path to an extracted directory
+    with open(valid_behavior_pack / "manifest.json") as f:
+        manifest = json.load(f)
+    assert "uuid" in manifest["header"]
+    assert manifest["modules"][0]["type"] == "data"
+
+    # invalid_behavior_pack simulates a corrupt manifest (missing UUID)
+    with open(invalid_behavior_pack / "manifest.json") as f:
+        invalid_manifest = json.load(f)
+    assert "uuid" not in invalid_manifest.get("header", {})
+```
+
+### 3. Working with Bundles (.mcaddon / .mcworld)
+
+If your application supports `.mcaddon` or `.mcworld` file uploads, you can use the built-in fixtures that provide generated `.zip` files under those extensions.
+
+```python
+import zipfile
+
+def test_mcaddon_extraction(valid_mcaddon_zip, tmp_path):
+    # valid_mcaddon_zip is a Path to a .mcaddon file
+    assert valid_mcaddon_zip.suffix == ".mcaddon"
+    
+    with zipfile.ZipFile(valid_mcaddon_zip, "r") as zf:
+        # An .mcaddon usually contains multiple .mcpack files
+        assert any(f.endswith(".mcpack") for f in zf.namelist())
+
+def test_mcworld_import(valid_mcworld_zip, mock_http_server):
+    # You can even move these bundles into the mock server for download testing
+    import shutil
+    dest = mock_http_server.directory / valid_mcworld_zip.name
+    shutil.copy2(valid_mcworld_zip, dest)
+    
+    download_url = f"{mock_http_server.url}/{valid_mcworld_zip.name}"
+    # ... assert your application handles the URL correctly
+```
+
+### Reference: Available Pytest Fixtures
+
+| Fixture Name | Return Type | Description |
+| :--- | :--- | :--- |
+| `mock_http_server` | `MockHTTPServer` | Yields a running multithreaded HTTP server bound to `127.0.0.1`. Automatically cleans up after the test. Access the URL via `.url` and its root directory via `.directory`. |
+| `dummy_server_zip` | `Callable` | A factory function: `def _factory(target_dir, version="...", is_preview=False, is_windows=None)`. Returns a `Path` to the generated server zip. |
+| `valid_behavior_pack` | `Path` | Path to a valid behavior pack directory. |
+| `invalid_behavior_pack` | `Path` | Path to an invalid behavior pack directory (missing UUID). |
+| `valid_resource_pack` | `Path` | Path to a valid resource pack directory. |
+| `valid_behavior_pack_zip` | `Path` | Path to a valid behavior pack `.mcpack` file. |
+| `valid_mcaddon_zip` | `Path` | Path to a valid `.mcaddon` file (contains bundled behavior and resource packs). |
+| `valid_mcworld_zip` | `Path` | Path to a valid `.mcworld` file (contains `level.dat` and embedded addons). |
+
+---
+
+## Asset Generation (Manual Usage)
+
+If you need even more customization, you can import and use the generation functions directly without fixtures:
+
+```python
+from bsm_test_utils import create_mcworld, create_behavior_pack, create_mcaddon
+
+# 1. Create a behavior pack zip
+create_behavior_pack("./packs", name="My BP", as_zip=True)
+
+# 2. Create an mcaddon containing multiple custom packs
+create_mcaddon(
+    "./bundles", 
+    name="My Addon Bundle",
+    packs=[
+        {"name": "My Custom BP", "pack_type": "data"},
+        {"name": "My Custom RP", "pack_type": "resources"}
+    ]
+)
+
+# 3. Create a world with embedded addons
+create_mcworld(
+    "./worlds", 
+    name="My World", 
+    level_dat_content="custom binary data",
+    packs=[
+        {"name": "Embedded BP", "pack_type": "data"},
+        {"name": "Embedded RP", "pack_type": "resources"}
+    ]
+)
 ```

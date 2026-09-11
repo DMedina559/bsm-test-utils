@@ -27,10 +27,10 @@ jobs:
           cd src_go
           
           # Build Linux binary
-          GOOS=linux GOARCH=amd64 go build -o ../src/bedrock_server_dummy/data/bedrock_server main.go
+          GOOS=linux GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server main.go
           
           # Build Windows binary
-          GOOS=windows GOARCH=amd64 go build -o ../src/bedrock_server_dummy/data/bedrock_server.exe main.go
+          GOOS=windows GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server.exe main.go
 
       - name: Set up Python
         uses: actions/setup-python@v5

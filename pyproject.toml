@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bedrock-server-dummy"
+name = "bsm-test-utils"
 version = "0.1.0"
-description = "A dummy bedrock server for testing integration with bedrock server manager"
+description = "Test utilities and dummy bedrock server for testing integration with bedrock server manager"
 authors = [
     { name = "Author", email = "author@example.com" }
 ]
@@ -14,12 +14,12 @@ requires-python = ">=3.8"
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/example/bedrock-server-dummy"
-Repository = "https://github.com/example/bedrock-server-dummy.git"
+Homepage = "https://github.com/example/bsm-test-utils"
+Repository = "https://github.com/example/bsm-test-utils.git"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["bedrock_server_dummy"]
+packages = ["bsm_test_utils"]
 
 [tool.setuptools.package-data]
-"bedrock_server_dummy" = ["data/*"]
+"bsm_test_utils" = ["data/*"]

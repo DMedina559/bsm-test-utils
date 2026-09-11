@@ -25,5 +25,5 @@ var/
 
 # Go
 src_go/dummy_server
-src/bedrock_server_dummy/data/bedrock_server
-src/bedrock_server_dummy/data/bedrock_server.exe
+src/bsm_test_utils/data/bedrock_server
+src/bsm_test_utils/data/bedrock_server.exe

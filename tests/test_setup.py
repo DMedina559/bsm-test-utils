@@ -1,15 +1,16 @@
-import tempfile
 import os
 import platform
 import subprocess
+import tempfile
 from pathlib import Path
 
-from bedrock_server_dummy import setup_dummy_server
+from bsm_test_utils import setup_dummy_server
+
 
 def test_setup_dummy_server():
     # First, mock the binary existence by copying the built dummy_server into data
     binary_name = "bedrock_server.exe" if platform.system() == "Windows" else "bedrock_server"
-    package_data_dir = Path(__file__).parent.parent / "src" / "bedrock_server_dummy" / "data"
+    package_data_dir = Path(__file__).parent.parent / "src" / "bsm_test_utils" / "data"
     
     # Copy from src_go to data for testing
     built_binary = Path(__file__).parent.parent / "src_go" / "dummy_server"
