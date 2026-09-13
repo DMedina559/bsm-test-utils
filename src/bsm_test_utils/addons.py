@@ -28,14 +28,15 @@ def _generate_manifest(
 
 
 def create_addon(
-    target_dir: Union[str, Path],
+    target_dir: Optional[Union[str, Path]] = None,
     name: str = "Test Addon",
     pack_type: str = "data",
     valid: bool = True,
     version: Optional[List[int]] = None,
     as_zip: bool = False,
     invalid_json: bool = False,
-) -> Path:
+    out_zip: Optional[zipfile.ZipFile] = None,
+) -> Optional[Path]:
     """
     Dynamically generates a Bedrock addon (behavior pack, resource pack, or script pack).
 
@@ -48,8 +49,11 @@ def create_addon(
     :param invalid_json: If True, generates a manifest with broken JSON syntax.
     :return: Path to the generated addon (directory or zip).
     """
-    target = Path(target_dir)
-    target.mkdir(parents=True, exist_ok=True)
+    if target_dir is not None:
+        target = Path(target_dir)
+        target.mkdir(parents=True, exist_ok=True)
+    else:
+        target = None
 
     version = version or [1, 0, 0]
     uuid1 = str(uuid.uuid4()) if valid else "invalid-uuid"
@@ -73,44 +77,70 @@ def create_addon(
         ]  # Strip off the closing braces to break the JSON syntax
 
     if as_zip:
-        zip_path = target / f"{addon_name}.mcpack"
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("manifest.json", manifest_str)
-            if pack_type == "data" or pack_type == "script":
-                zf.writestr("scripts/main.js", "console.log('dummy script');")
-            else:
-                zf.writestr("textures/item_texture.json", "{}")
-        return zip_path
-    else:
-        pack_dir = target / addon_name
-        pack_dir.mkdir(parents=True, exist_ok=True)
-        with open(pack_dir / "manifest.json", "w") as f:
-            f.write(manifest_str)
-
-        if pack_type == "data" or pack_type == "script":
-            (pack_dir / "scripts").mkdir(exist_ok=True)
-            with open(pack_dir / "scripts" / "main.js", "w") as f:
-                f.write("console.log('dummy script');")
+        if out_zip is not None:
+            # Create in-memory zip
+            import io
+            mem_zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(mem_zip_buffer, "w") as zf:
+                zf.writestr("manifest.json", manifest_str)
+                if pack_type == "data" or pack_type == "script":
+                    zf.writestr("scripts/main.js", "console.log('dummy script');")
+                else:
+                    zf.writestr("textures/item_texture.json", "{}")
+            # Write out to parent zip
+            out_zip.writestr(f"{addon_name}.mcpack", mem_zip_buffer.getvalue())
+            return None
         else:
-            (pack_dir / "textures").mkdir(exist_ok=True)
-            with open(pack_dir / "textures" / "item_texture.json", "w") as f:
-                f.write("{}")
-        return pack_dir
+            if target is None:
+                raise ValueError("target_dir is required if out_zip is None")
+            zip_path = target / f"{addon_name}.mcpack"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("manifest.json", manifest_str)
+                if pack_type == "data" or pack_type == "script":
+                    zf.writestr("scripts/main.js", "console.log('dummy script');")
+                else:
+                    zf.writestr("textures/item_texture.json", "{}")
+            return zip_path
+    else:
+        if out_zip is not None:
+            out_zip.writestr(f"{addon_name}/manifest.json", manifest_str)
+            if pack_type == "data" or pack_type == "script":
+                out_zip.writestr(f"{addon_name}/scripts/main.js", "console.log('dummy script');")
+            else:
+                out_zip.writestr(f"{addon_name}/textures/item_texture.json", "{}")
+            return None
+        else:
+            if target is None:
+                raise ValueError("target_dir is required if out_zip is None")
+            pack_dir = target / addon_name
+            pack_dir.mkdir(parents=True, exist_ok=True)
+            with open(pack_dir / "manifest.json", "w") as f:
+                f.write(manifest_str)
+
+            if pack_type == "data" or pack_type == "script":
+                (pack_dir / "scripts").mkdir(exist_ok=True)
+                with open(pack_dir / "scripts" / "main.js", "w") as f:
+                    f.write("console.log('dummy script');")
+            else:
+                (pack_dir / "textures").mkdir(exist_ok=True)
+                with open(pack_dir / "textures" / "item_texture.json", "w") as f:
+                    f.write("{}")
+            return pack_dir
 
 
-def create_behavior_pack(target_dir: Union[str, Path], **kwargs) -> Path:
+def create_behavior_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
     """Helper to create a behavior pack."""
     kwargs["pack_type"] = "data"
     return create_addon(target_dir, **kwargs)
 
 
-def create_resource_pack(target_dir: Union[str, Path], **kwargs) -> Path:
+def create_resource_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
     """Helper to create a resource pack."""
     kwargs["pack_type"] = "resources"
     return create_addon(target_dir, **kwargs)
 
 
-def create_script_pack(target_dir: Union[str, Path], **kwargs) -> Path:
+def create_script_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
     """Helper to create a script pack."""
     kwargs["pack_type"] = "script"
     return create_addon(target_dir, **kwargs)
@@ -141,20 +171,12 @@ def create_mcaddon(
             {"name": f"{name} RP", "pack_type": "resources"},
         ]
 
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Generate all packs as zips (.mcpack)
-        generated_zips = []
+    # Bundle them into the .mcaddon
+    with zipfile.ZipFile(mcaddon_path, "w") as mcaddon_zf:
         for pack_kwargs in packs:
             pack_kwargs["as_zip"] = True
-            zip_path = create_addon(tmpdir, **pack_kwargs)
-            generated_zips.append(zip_path)
-
-        # Bundle them into the .mcaddon
-        with zipfile.ZipFile(mcaddon_path, "w") as mcaddon_zf:
-            for zip_path in generated_zips:
-                mcaddon_zf.write(zip_path, arcname=zip_path.name)
+            pack_kwargs["out_zip"] = mcaddon_zf
+            create_addon(**pack_kwargs)
 
     return mcaddon_path
 
