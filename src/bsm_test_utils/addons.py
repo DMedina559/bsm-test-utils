@@ -238,48 +238,54 @@ def create_mcworld(
 
                 if pack_type == "data" or pack_type == "script":
                     pack_path = create_addon(bp_dir, **pack_kwargs)
-                    manifest_path = pack_path / "manifest.json"
-                    if manifest_path.exists():
-                        with open(manifest_path, "r") as f:
-                            try:
-                                manifest_data = json.load(f)
-                                if (
-                                    "header" in manifest_data
-                                    and "uuid" in manifest_data["header"]
-                                    and "version" in manifest_data["header"]
-                                ):
-                                    world_behavior_packs.append(
-                                        {
-                                            "pack_id": manifest_data["header"]["uuid"],
-                                            "version": manifest_data["header"][
-                                                "version"
-                                            ],
-                                        }
-                                    )
-                            except json.JSONDecodeError:
-                                pass
+                    if pack_path is not None:
+                        manifest_path = pack_path / "manifest.json"
+                        if manifest_path.exists():
+                            with open(manifest_path, "r") as f:
+                                try:
+                                    manifest_data = json.load(f)
+                                    if (
+                                        "header" in manifest_data
+                                        and "uuid" in manifest_data["header"]
+                                        and "version" in manifest_data["header"]
+                                    ):
+                                        world_behavior_packs.append(
+                                            {
+                                                "pack_id": manifest_data["header"][
+                                                    "uuid"
+                                                ],
+                                                "version": manifest_data["header"][
+                                                    "version"
+                                                ],
+                                            }
+                                        )
+                                except json.JSONDecodeError:
+                                    pass
                 else:
                     pack_path = create_addon(rp_dir, **pack_kwargs)
-                    manifest_path = pack_path / "manifest.json"
-                    if manifest_path.exists():
-                        with open(manifest_path, "r") as f:
-                            try:
-                                manifest_data = json.load(f)
-                                if (
-                                    "header" in manifest_data
-                                    and "uuid" in manifest_data["header"]
-                                    and "version" in manifest_data["header"]
-                                ):
-                                    world_resource_packs.append(
-                                        {
-                                            "pack_id": manifest_data["header"]["uuid"],
-                                            "version": manifest_data["header"][
-                                                "version"
-                                            ],
-                                        }
-                                    )
-                            except json.JSONDecodeError:
-                                pass
+                    if pack_path is not None:
+                        manifest_path = pack_path / "manifest.json"
+                        if manifest_path.exists():
+                            with open(manifest_path, "r") as f:
+                                try:
+                                    manifest_data = json.load(f)
+                                    if (
+                                        "header" in manifest_data
+                                        and "uuid" in manifest_data["header"]
+                                        and "version" in manifest_data["header"]
+                                    ):
+                                        world_resource_packs.append(
+                                            {
+                                                "pack_id": manifest_data["header"][
+                                                    "uuid"
+                                                ],
+                                                "version": manifest_data["header"][
+                                                    "version"
+                                                ],
+                                            }
+                                        )
+                                except json.JSONDecodeError:
+                                    pass
 
             # Write world pack manifests
             if world_behavior_packs:

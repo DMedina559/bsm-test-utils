@@ -63,6 +63,5 @@ def create_server_zip(
         # Add some empty directories standard in the zip
         zf.writestr("behavior_packs/", "")
         zf.writestr("resource_packs/", "")
-        zf.writestr("premium_cache/", "")
 
     return zip_path
