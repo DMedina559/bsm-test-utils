@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bsm-test-utils"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Test utilities and dummy bedrock server for testing integration with pytest"
 authors = [
     { name="DMedina559", email="dmedina559-github@outlook.com" },
