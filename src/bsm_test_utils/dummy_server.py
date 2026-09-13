@@ -1,17 +1,15 @@
-import os
 import platform
-import shutil
 import zipfile
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 
 def create_server_zip(
     target_dir: Union[str, Path],
     version: str = "1.20.0.01",
     is_preview: bool = False,
-    is_windows: bool = None,
-    filename: str = None,
+    is_windows: bool | None = None,
+    filename: str | None = None,
 ) -> Path:
     """
     Creates a mock bedrock server zip release.

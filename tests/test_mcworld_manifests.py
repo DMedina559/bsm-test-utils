@@ -1,6 +1,5 @@
 import json
 import zipfile
-from pathlib import Path
 
 from bsm_test_utils.addons import create_mcworld
 

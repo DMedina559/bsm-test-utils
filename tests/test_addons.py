@@ -1,8 +1,13 @@
 import json
 import zipfile
-from pathlib import Path
 
-from bsm_test_utils.addons import create_behavior_pack, create_resource_pack
+from bsm_test_utils.addons import (
+    create_behavior_pack,
+    create_mcaddon,
+    create_mcworld,
+    create_resource_pack,
+    create_script_pack,
+)
 
 
 def test_create_behavior_pack_dir(tmp_path):
@@ -37,9 +42,6 @@ def test_create_invalid_pack(tmp_path):
     with open(pack_dir / "manifest.json") as f:
         manifest = json.load(f)
     assert "uuid" not in manifest.get("header", {})
-
-
-from bsm_test_utils.addons import create_mcaddon, create_mcworld, create_script_pack
 
 
 def test_create_script_pack(tmp_path):

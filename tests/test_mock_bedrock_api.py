@@ -1,7 +1,6 @@
 import json
 import urllib.request
 import zipfile
-from pathlib import Path
 
 
 def test_mock_bedrock_api_fixture(mock_bedrock_api):

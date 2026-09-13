@@ -1,4 +1,3 @@
-import os
 import platform
 import subprocess
 import tempfile
