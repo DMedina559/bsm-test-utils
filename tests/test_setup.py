@@ -7,19 +7,15 @@ from bsm_test_utils import setup_dummy_server
 
 
 def test_setup_dummy_server():
-    # First, mock the binary existence by copying the built dummy_server into data
-    binary_name = (
-        "bedrock_server.exe" if platform.system() == "Windows" else "bedrock_server"
-    )
+    is_windows = platform.system() == "Windows"
+    binary_name = "bedrock_server.exe" if is_windows else "bedrock_server"
+    
     package_data_dir = Path(__file__).parent.parent / "src" / "bsm_test_utils" / "data"
-
-    # Copy from src_go to data for testing
-    built_binary = Path(__file__).parent.parent / "src_go" / "dummy_server"
     dest_binary = package_data_dir / binary_name
 
-    import shutil
-
-    shutil.copy2(built_binary, dest_binary)
+    # Check if the binary was built successfully by your build command
+    if not dest_binary.exists():
+        raise FileNotFoundError(f"Could not find built binary at {dest_binary}. Did you run the go build command?")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         setup_dummy_server(temp_dir)
