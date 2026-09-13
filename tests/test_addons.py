@@ -1,6 +1,8 @@
 import json
 import zipfile
 
+import pytest
+
 from bsm_test_utils.addons import (
     create_behavior_pack,
     create_mcaddon,
@@ -73,3 +75,21 @@ def test_create_mcworld(tmp_path):
         namelist = zf.namelist()
         assert "level.dat" in namelist
         assert "behavior_packs/embedded_bp_data/manifest.json" in namelist
+
+
+def test_create_invalid_json(tmp_path):
+    pack_dir = create_behavior_pack(
+        tmp_path, name="Invalid JSON Pack", invalid_json=True
+    )
+    manifest_path = pack_dir / "manifest.json"
+    assert manifest_path.exists()
+
+    with open(manifest_path, "r") as f:
+        content = f.read()
+
+    # The json syntax is broken by stripping off the closing braces.
+    # The original ends with "}\n  ]\n}", stripping 5 chars leaves it ending with "}\n"
+    assert content.strip().endswith("}")
+
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(content)

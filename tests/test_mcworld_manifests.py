@@ -39,3 +39,30 @@ def test_mcworld_pack_manifests(tmp_path):
     assert len(rp_manifest) == 1
     assert "pack_id" in rp_manifest[0]
     assert rp_manifest[0]["version"] == [2, 0, 0]
+
+
+def test_mcworld_pack_manifests_invalid_json(tmp_path):
+    """
+    Tests that create_mcworld gracefully handles JSONDecodeError when embedded packs
+    have invalid JSON manifests.
+    """
+    packs = [
+        {"name": "My BP", "pack_type": "data", "invalid_json": True},
+        {"name": "My RP", "pack_type": "resources", "invalid_json": True},
+    ]
+    world_zip = create_mcworld(tmp_path, name="InvalidManifestWorld", packs=packs)
+
+    extract_dir = tmp_path / "extracted_invalid"
+    with zipfile.ZipFile(world_zip, "r") as zf:
+        zf.extractall(extract_dir)
+
+    world_dir = extract_dir
+
+    bp_manifest_path = world_dir / "world_behavior_packs.json"
+    rp_manifest_path = world_dir / "world_resource_packs.json"
+
+    # Because both packs have invalid JSON, the decoding error is caught,
+    # and neither pack is added. As a result, the lists are empty and the
+    # files are not created.
+    assert not bp_manifest_path.exists()
+    assert not rp_manifest_path.exists()

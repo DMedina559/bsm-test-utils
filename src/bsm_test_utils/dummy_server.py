@@ -48,7 +48,7 @@ def create_server_zip(
 
     if not src_go_binary.exists():
         raise FileNotFoundError(
-            f"Could not find dummy server binary. Please ensure it is built."
+            "Could not find dummy server binary. Please ensure it is built."
         )
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -56,11 +56,9 @@ def create_server_zip(
         zf.write(src_go_binary, arcname=binary_name)
 
         # Add configs
-        configs = ["server.properties", "allowlist.json", "permissions.json"]
+        configs = ("server.properties", "allowlist.json", "permissions.json")
         for config in configs:
-            config_path = data_dir / config
-            if config_path.exists():
-                zf.write(config_path, arcname=config)
+            zf.write(data_dir / config, arcname=config)
 
         # Add some empty directories standard in the zip
         zf.writestr("behavior_packs/", "")

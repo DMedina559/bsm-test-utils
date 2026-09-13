@@ -80,6 +80,7 @@ def create_addon(
         if out_zip is not None:
             # Create in-memory zip
             import io
+
             mem_zip_buffer = io.BytesIO()
             with zipfile.ZipFile(mem_zip_buffer, "w") as zf:
                 zf.writestr("manifest.json", manifest_str)
@@ -105,7 +106,9 @@ def create_addon(
         if out_zip is not None:
             out_zip.writestr(f"{addon_name}/manifest.json", manifest_str)
             if pack_type == "data" or pack_type == "script":
-                out_zip.writestr(f"{addon_name}/scripts/main.js", "console.log('dummy script');")
+                out_zip.writestr(
+                    f"{addon_name}/scripts/main.js", "console.log('dummy script');"
+                )
             else:
                 out_zip.writestr(f"{addon_name}/textures/item_texture.json", "{}")
             return None
@@ -128,19 +131,25 @@ def create_addon(
             return pack_dir
 
 
-def create_behavior_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
+def create_behavior_pack(
+    target_dir: Optional[Union[str, Path]] = None, **kwargs
+) -> Optional[Path]:
     """Helper to create a behavior pack."""
     kwargs["pack_type"] = "data"
     return create_addon(target_dir, **kwargs)
 
 
-def create_resource_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
+def create_resource_pack(
+    target_dir: Optional[Union[str, Path]] = None, **kwargs
+) -> Optional[Path]:
     """Helper to create a resource pack."""
     kwargs["pack_type"] = "resources"
     return create_addon(target_dir, **kwargs)
 
 
-def create_script_pack(target_dir: Optional[Union[str, Path]] = None, **kwargs) -> Optional[Path]:
+def create_script_pack(
+    target_dir: Optional[Union[str, Path]] = None, **kwargs
+) -> Optional[Path]:
     """Helper to create a script pack."""
     kwargs["pack_type"] = "script"
     return create_addon(target_dir, **kwargs)
