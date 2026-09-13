@@ -24,7 +24,7 @@ class MockHTTPServer:
             def __init__(self, *args, directory=str(self.directory), **kwargs):
                 super().__init__(*args, directory=directory, **kwargs)
 
-        self.server = socketserver.TCPServer(("", self.port), Handler)
+        self.server = socketserver.TCPServer(("127.0.0.1", self.port), Handler)
         self.port = self.server.server_address[1]  # Update port in case it was 0
 
         self.thread = threading.Thread(target=self.server.serve_forever)
