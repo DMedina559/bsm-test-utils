@@ -27,3 +27,6 @@ var/
 src_go/dummy_server
 src/bsm_test_utils/data/bedrock_server
 src/bsm_test_utils/data/bedrock_server.exe
+
+# Visual Studio Code
+.vs/

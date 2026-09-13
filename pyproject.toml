@@ -1,25 +1,88 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=80.9", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bsm-test-utils"
 version = "0.1.0"
-description = "Test utilities and dummy bedrock server for testing integration with bedrock server manager"
+description = "Test utilities and dummy bedrock server for testing integration with pytest"
 authors = [
-    { name = "Author", email = "author@example.com" }
+    { name="DMedina559", email="dmedina559-github@outlook.com" },
 ]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = []
+keywords = ["minecraft", "bedrock", "server", "test"]
 
 [project.urls]
-Homepage = "https://github.com/example/bsm-test-utils"
-Repository = "https://github.com/example/bsm-test-utils.git"
+Repository = "https://github.com/dmedina559/bsm-test-utils.git"
+"Bug Tracker" = "https://github.com/DMedina559/bsm-test-utils/issues"
+Changelog = "https://github.com/DMedina559/bsm-test-utils/releases"
+
+[project.optional-dependencies]
+dev = [
+    "pytest >=8.4.0,<9.2",
+    "pytest-mock >=3.14.0,<3.16",
+    "pytest-cov >=6.0.0,<8.0",
+    "black >=25.1.0,<26.6",
+    "flake8 >=7.3.0,<7.4",
+    "isort >=5.13.0,<9.1",
+    "mypy >=1.10.0,<2.4",
+    "pre-commit >=4.6.0,<4.7",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["bsm_test_utils"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "**/__pycache__",  # Excludes all __pycache__ directories
+    "**/*.pyc",        # Excludes all .pyc files
+    "**/*.pyo",        # Excludes all .pyo files
+]
 
 [tool.setuptools.package-data]
 "bsm_test_utils" = ["data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=bsm_test_utils --cov-report=term --cov-report=html --cov-report=xml"
+
+[tool.coverage.run]
+source = ["src/bsm_test_utils"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.setuptools_scm]
+local_scheme = "no-local-version"
+
+[tool.black]
+target-version = ["py311", "py312", "py313", "py314"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
