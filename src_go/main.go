@@ -40,20 +40,20 @@ func main() {
 	fmt.Println("#               LOADING VANILLA WORLD               #")
 	fmt.Println("#                                                   #")
 	fmt.Println("#####################################################")
-	
+
 	// Simulate delay for world loading
 	time.Sleep(1 * time.Second)
-	
+
 	logPrint("INFO", "Opening level 'worlds/Bedrock level/db'")
 	logPrint("INFO", "Pack Stack - None")
 	logPrint("INFO", "IPv4 supported, port: 19132: Used for gameplay and LAN discovery")
 	logPrint("INFO", "IPv6 supported, port: 19133: Used for gameplay")
 	logPrint("INFO", "Signed in to signaling service successfully")
 	logPrint("INFO", "Waiting for Minecraft services...")
-	
+
 	// Simulate another delay
 	time.Sleep(1 * time.Second)
-	
+
 	logPrint("INFO", "Server started.")
 	logPrint("INFO", "================ TELEMETRY MESSAGE ===================")
 	logPrint("INFO", "Server Telemetry is currently not enabled. ")
@@ -67,7 +67,7 @@ func main() {
 	for scanner.Scan() {
 		text := scanner.Text()
 		text = strings.TrimSpace(text)
-		
+
 		if text == "stop" {
 			logPrint("INFO", "Server stop requested.")
 			logPrint("INFO", "Stopping server...")
@@ -101,9 +101,9 @@ func handleDummyCommand(text string) {
 	if len(parts) < 2 {
 		return
 	}
-	
+
 	cmd := parts[1]
-	
+
 	if cmd == "CRASH" {
 		logPrint("ERROR", "CRASH: Fatal runtime error encountered. Core dumped.")
 		os.Exit(1)

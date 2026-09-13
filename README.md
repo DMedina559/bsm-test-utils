@@ -42,25 +42,25 @@ def test_download_and_extract_server(mock_http_server, dummy_server_zip, tmp_pat
     # 1. Generate the zip file directly into the mock server's directory
     # The factory returns the Path to the generated zip file.
     zip_path = dummy_server_zip(
-        target_dir=mock_http_server.directory, 
-        version="1.20.10.01", 
+        target_dir=mock_http_server.directory,
+        version="1.20.10.01",
         is_preview=False
     )
-    
+
     # 2. Construct the URL to the mock server
     download_url = f"{mock_http_server.url}/{zip_path.name}"
-    
+
     # 3. Simulate your application's download logic
     dest_path = tmp_path / zip_path.name
     urllib.request.urlretrieve(download_url, dest_path)
-    
+
     # 4. Verify the download and extract it
     assert dest_path.exists()
-    
+
     extract_dir = tmp_path / "server"
     with zipfile.ZipFile(dest_path, "r") as zf:
         zf.extractall(extract_dir)
-        
+
     # The dummy server contains standard config files and the platform binary
     assert (extract_dir / "server.properties").exists()
     assert (extract_dir / "behavior_packs").is_dir()
@@ -96,7 +96,7 @@ import zipfile
 def test_mcaddon_extraction(valid_mcaddon_zip, tmp_path):
     # valid_mcaddon_zip is a Path to a .mcaddon file
     assert valid_mcaddon_zip.suffix == ".mcaddon"
-    
+
     with zipfile.ZipFile(valid_mcaddon_zip, "r") as zf:
         # An .mcaddon usually contains multiple .mcpack files
         assert any(f.endswith(".mcpack") for f in zf.namelist())
@@ -106,7 +106,7 @@ def test_mcworld_import(valid_mcworld_zip, mock_http_server):
     import shutil
     dest = mock_http_server.directory / valid_mcworld_zip.name
     shutil.copy2(valid_mcworld_zip, dest)
-    
+
     download_url = f"{mock_http_server.url}/{valid_mcworld_zip.name}"
     # ... assert your application handles the URL correctly
 ```
@@ -122,14 +122,14 @@ import urllib.request
 def test_bedrock_api_mock(mock_bedrock_api):
     # The fixture yields the mock_http_server instance, but with the API already populated
     api_url = f"{mock_bedrock_api.url}/api/v1.0/download/links"
-    
+
     # 1. Fetch the JSON as your manager would
     req = urllib.request.Request(api_url)
     with urllib.request.urlopen(req) as response:
         data = json.loads(response.read().decode())
-        
+
     links = {item["downloadType"]: item["downloadUrl"] for item in data["result"]["links"]}
-    
+
     # 2. Download a platform specific zip
     linux_url = links["serverBedrockLinux"]
     dest = mock_bedrock_api.directory / "downloaded.zip"
@@ -177,7 +177,7 @@ create_behavior_pack("./packs", name="My BP", as_zip=True)
 
 # 2. Create an mcaddon containing multiple custom packs
 create_mcaddon(
-    "./bundles", 
+    "./bundles",
     name="My Addon Bundle",
     packs=[
         {"name": "My Custom BP", "pack_type": "data"},
@@ -186,11 +186,11 @@ create_mcaddon(
 )
 
 # 3. Create a world with embedded addons
-# This will also automatically generate world_behavior_packs.json 
+# This will also automatically generate world_behavior_packs.json
 # and world_resource_packs.json mapping the generated packs.
 create_mcworld(
-    "./worlds", 
-    name="My World", 
+    "./worlds",
+    name="My World",
     level_dat_content="custom binary data",
     packs=[
         {"name": "Embedded BP", "pack_type": "data"},

@@ -27,10 +27,10 @@ jobs:
       - name: Build Go binaries
         run: |
           cd src_go
-          
+
           # Build Linux binary
           GOOS=linux GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server main.go
-          
+
           # Build Windows binary
           GOOS=windows GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server.exe main.go
 
