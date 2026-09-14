@@ -63,17 +63,31 @@ def test_download_and_extract_server(mock_http_server, dummy_server_zip, tmp_pat
 
     # The dummy server contains standard config files and the platform binary
     assert (extract_dir / "server.properties").exists()
+    assert (extract_dir / "allowlist.json").exists()
+    assert (extract_dir / "permissions.json").exists()
     assert (extract_dir / "behavior_packs").is_dir()
 ```
 
+#### Included Server Configurations
+The generated server zip automatically includes standard configuration files populated with default settings:
+- `server.properties`
+- `allowlist.json` (defaults to `[]`)
+- `permissions.json` (defaults to `[]`)
+
+This enables you to write integration tests that rely on parsing or managing these configuration files.
+
 ### 2. Testing Addon Management
 
-You can inject pre-built valid or invalid addons to test how your application handles importing or reading them.
+You can inject pre-built valid or invalid addons to test how your application handles importing or reading them. The package includes multiple tools to simulate edge cases like corrupt configurations or broken JSON formatting.
+
+- `invalid_behavior_pack`: Creates a valid JSON structure but omits required fields (like the `uuid`).
+- `invalid_json_pack`: Creates a fundamentally corrupt JSON manifest with syntax errors.
 
 ```python
 import json
+import pytest
 
-def test_addon_manifest_reading(valid_behavior_pack, invalid_behavior_pack):
+def test_addon_manifest_reading(valid_behavior_pack, invalid_behavior_pack, invalid_json_pack):
     # valid_behavior_pack is a Path to an extracted directory
     with open(valid_behavior_pack / "manifest.json") as f:
         manifest = json.load(f)
@@ -84,6 +98,11 @@ def test_addon_manifest_reading(valid_behavior_pack, invalid_behavior_pack):
     with open(invalid_behavior_pack / "manifest.json") as f:
         invalid_manifest = json.load(f)
     assert "uuid" not in invalid_manifest.get("header", {})
+
+    # invalid_json_pack simulates a fundamentally corrupt JSON file
+    with open(invalid_json_pack / "manifest.json") as f:
+        with pytest.raises(json.JSONDecodeError):
+            json.load(f)
 ```
 
 ### 3. Working with Bundles (.mcaddon / .mcworld)
@@ -186,8 +205,8 @@ create_mcaddon(
 )
 
 # 3. Create a world with embedded addons
-# This will also automatically generate world_behavior_packs.json
-# and world_resource_packs.json mapping the generated packs.
+# When packs are provided, this will automatically read their manifests and generate
+# `world_behavior_packs.json` and `world_resource_packs.json` linking to the embedded packs.
 create_mcworld(
     "./worlds",
     name="My World",
