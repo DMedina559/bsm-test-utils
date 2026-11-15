@@ -1,9 +1,8 @@
 import platform
-import subprocess
 import tempfile
 from pathlib import Path
 
-from bsm_test_utils import setup_dummy_server
+from bsm_test_utils import run_server_process, setup_dummy_server
 
 
 def test_setup_dummy_server():
@@ -13,7 +12,6 @@ def test_setup_dummy_server():
     package_data_dir = Path(__file__).parent.parent / "src" / "bsm_test_utils" / "data"
     dest_binary = package_data_dir / binary_name
 
-    # Check if the binary was built successfully by your build command
     if not dest_binary.exists():
         raise FileNotFoundError(
             f"Could not find built binary at {dest_binary}. Did you run the go build command?"
@@ -29,18 +27,15 @@ def test_setup_dummy_server():
         assert (target / "allowlist.json").exists()
         assert (target / "permissions.json").exists()
         assert (target / "behavior_packs").is_dir()
+        assert (target / "resource_packs").is_dir()
         assert (target / "worlds" / "Bedrock level" / "db").is_dir()
 
-        # Test executing the binary
-        proc = subprocess.Popen(
-            [str(target / binary_name)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
+        returncode, stdout, _ = run_server_process(
+            target / binary_name,
+            args=["--startup-delay-ms=10"],
+            stdin_text="stop\n",
+            timeout=5.0,
         )
-
-        stdout, _ = proc.communicate(input="stop\n", timeout=5)
         assert "Server stop requested." in stdout
         assert "Quit correctly" in stdout
-        assert proc.returncode == 0
+        assert returncode == 0
