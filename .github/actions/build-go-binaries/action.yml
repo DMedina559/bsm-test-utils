@@ -1,0 +1,23 @@
+name: Build Go Binaries
+description: Set up Go and cross-compile Linux and Windows test server binaries
+
+inputs:
+  go-version:
+    description: Go toolchain version
+    required: false
+    default: '1.27'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Build test server binaries
+      shell: bash
+      working-directory: src_go
+      run: |
+        GOOS=linux GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server main.go
+        GOOS=windows GOARCH=amd64 go build -o ../src/bsm_test_utils/data/bedrock_server.exe main.go

@@ -1,62 +1,97 @@
-import os
-import platform
-import shutil
-from pathlib import Path
-
-from .addons import create_addon, create_behavior_pack, create_resource_pack
-from .dummy_server import create_server_zip
-from .http_mock import MockHTTPServer
+from .addons import (
+    BuiltPack,
+    PackFaults,
+    PackSpec,
+    build_pack,
+    create_addon,
+    create_behavior_pack,
+    create_checksum_mismatch_archive,
+    create_corrupt_archive,
+    create_duplicate_entry_archive,
+    create_mcaddon,
+    create_mcworld,
+    create_resource_pack,
+    create_script_pack,
+    create_traversal_archive,
+    sanitize_filename,
+    validate_child_path,
+    write_mcpack,
+    write_pack_directory,
+)
+from .datasets import (
+    SYNTHETIC_DB_NOTICE,
+    BenchmarkRunResult,
+    BenchmarkSummary,
+    DatasetMutationSummary,
+    DatasetResult,
+    DatasetSpec,
+    FileEntry,
+    TreeComparison,
+    TreeInventory,
+    assert_trees_equal,
+    build_tree_inventory,
+    compare_trees,
+    create_server_dataset,
+    measure_backup_restore,
+    mutate_server_dataset,
+)
+from .dummy_server import (
+    REQUIRED_CONFIG_FILES,
+    STANDARD_SERVER_DIRECTORIES,
+    create_server_zip,
+    get_package_data_dir,
+    resolve_platform_spec,
+    resolve_server_binary,
+    run_server_process,
+    setup_dummy_server,
+    validate_required_assets,
+)
+from .http_mock import MockHTTPServer, RecordedRequest, RouteBehavior
 
 __all__ = [
-    "setup_dummy_server",
+    "BenchmarkRunResult",
+    "BenchmarkSummary",
+    "BuiltPack",
+    "DatasetMutationSummary",
+    "DatasetResult",
+    "DatasetSpec",
+    "FileEntry",
+    "MockHTTPServer",
+    "PackFaults",
+    "PackSpec",
+    "REQUIRED_CONFIG_FILES",
+    "RecordedRequest",
+    "RouteBehavior",
+    "STANDARD_SERVER_DIRECTORIES",
+    "SYNTHETIC_DB_NOTICE",
+    "TreeComparison",
+    "TreeInventory",
+    "assert_trees_equal",
+    "build_pack",
+    "build_tree_inventory",
+    "compare_trees",
     "create_addon",
     "create_behavior_pack",
+    "create_checksum_mismatch_archive",
+    "create_corrupt_archive",
+    "create_duplicate_entry_archive",
+    "create_mcaddon",
+    "create_mcworld",
     "create_resource_pack",
+    "create_script_pack",
+    "create_server_dataset",
     "create_server_zip",
-    "MockHTTPServer",
+    "create_traversal_archive",
+    "get_package_data_dir",
+    "measure_backup_restore",
+    "mutate_server_dataset",
+    "resolve_platform_spec",
+    "resolve_server_binary",
+    "run_server_process",
+    "sanitize_filename",
+    "setup_dummy_server",
+    "validate_child_path",
+    "validate_required_assets",
+    "write_mcpack",
+    "write_pack_directory",
 ]
-
-
-def setup_dummy_server(target_dir: str):
-    """
-    Sets up a dummy Bedrock server environment in the specified target directory.
-    This includes copying the appropriate executable for the current OS platform
-    and populating dummy configuration files, worlds, and behavior packs.
-
-    :param target_dir: The directory where the dummy server will be set up.
-    """
-    target = Path(target_dir)
-    target.mkdir(parents=True, exist_ok=True)
-
-    # 1. Determine platform and copy the correct binary
-    package_data_dir = Path(__file__).parent / "data"
-    is_windows = platform.system() == "Windows"
-    binary_name = "bedrock_server.exe" if is_windows else "bedrock_server"
-
-    src_binary = package_data_dir / binary_name
-    dest_binary = target / binary_name
-
-    if not src_binary.exists():
-        raise FileNotFoundError(
-            f"Could not find {binary_name} in the package data. Make sure "
-            "the package was built correctly with the Go binaries included."
-        )
-
-    shutil.copy2(src_binary, dest_binary)
-    if not is_windows:
-        # Ensure the binary is executable on Linux/macOS
-        os.chmod(dest_binary, 0o755)
-
-    # 2. Copy configuration files
-    configs = ["server.properties", "allowlist.json", "permissions.json"]
-    for config in configs:
-        src_config = package_data_dir / config
-        if src_config.exists():
-            shutil.copy2(src_config, target / config)
-
-    # 3. Create dummy directories required by validation
-    (target / "behavior_packs").mkdir(exist_ok=True)
-
-    # Create a dummy world for realism, matching the properties file
-    world_db_dir = target / "worlds" / "Bedrock level" / "db"
-    world_db_dir.mkdir(parents=True, exist_ok=True)
