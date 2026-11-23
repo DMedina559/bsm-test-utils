@@ -141,3 +141,46 @@ def test_dummy_server_players_bursts_and_timeout_cleanup():
             stdin_text="stop\n",
             timeout=0.3,
         )
+
+
+def test_interactive_disk_save_scenario(tmp_path):
+    import json
+
+    from bsm_test_utils import DummyServerProcess, setup_dummy_server
+
+    install = setup_dummy_server(tmp_path / "install")
+    binary = install / _get_host_binary().name
+    world_file = install / "worlds/Bedrock level/db/000003.ldb"
+    world_file.write_bytes(b"world")
+    scenario = tmp_path / "scenario.json"
+    scenario.write_text(
+        json.dumps(
+            [
+                {"when": "ready", "actions": ["__DUMMY__ PLAYER_JOIN Alex"]},
+                {
+                    "when": "after_command",
+                    "command": "save hold",
+                    "actions": ["__DUMMY__ STDERR_BURST 1 16"],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with DummyServerProcess(
+        binary,
+        ["--save-files-from-disk"],
+        cwd=install,
+        env={"BSM_DUMMY_SCENARIO": str(scenario)},
+    ) as process:
+        process.wait_for_line("Server started.")
+        process.wait_for_line("Player connected: Alex, xuid:")
+        process.send("save hold")
+        process.wait_for_line("STDERR BURST", stream="stderr")
+        process.send("save query")
+        process.wait_for_line("Bedrock level/db/000003.ldb:5")
+        process.send("save resume")
+        process.wait_for_line("Changes to the level are resumed.")
+        process.send("stop")
+        assert process.wait() == 0
+    binary.unlink()

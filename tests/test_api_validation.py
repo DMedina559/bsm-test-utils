@@ -52,7 +52,7 @@ def test_mock_bedrock_api_matches_recorded_structure(mock_bedrock_api):
 
 
 @pytest.mark.upstream_api
-def test_mock_bedrock_api_matches_live_upstream(mock_bedrock_api, request):
+def test_mock_bedrock_api_matches_live_upstream(request):
     """
     Opt-in live validation against the official Minecraft download API with a bounded timeout.
     Run with `--run-upstream-api` or `BSM_RUN_UPSTREAM_API=1`.
@@ -68,8 +68,6 @@ def test_mock_bedrock_api_matches_live_upstream(mock_bedrock_api, request):
     real_api_url = (
         "https://net-secondary.web.minecraft-services.net/api/v1.0/download/links"
     )
-    mock_api_url = f"{mock_bedrock_api.url}/api/v1.0/download/links"
-
     real_req = urllib.request.Request(real_api_url)
     try:
         with urllib.request.urlopen(real_req, timeout=5.0) as response:
@@ -77,7 +75,8 @@ def test_mock_bedrock_api_matches_live_upstream(mock_bedrock_api, request):
     except urllib.error.URLError:
         pytest.skip("Could not reach real Minecraft API within timeout.")
 
-    mock_req = urllib.request.Request(mock_api_url)
+    mock_bedrock_api = request.getfixturevalue("mock_bedrock_api")
+    mock_req = urllib.request.Request(f"{mock_bedrock_api.url}/api/v1.0/download/links")
     with urllib.request.urlopen(mock_req, timeout=5.0) as response:
         mock_data = json.loads(response.read().decode("utf-8"))
 

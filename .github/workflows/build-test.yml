@@ -52,9 +52,37 @@ jobs:
         run: python -m build
       - name: Run tests
         run: python -m pytest
-      - name: Validate installed distribution wheel
+      - name: Upload wheel for installation checks
         if: matrix.python-version == '3.14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-utils-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+
+  installed-wheel:
+    needs: build-and-test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v8
+        with:
+          name: test-utils-wheel
+          path: ${{ runner.temp }}/wheel
+      - name: Install and exercise the wheel outside the checkout
+        shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
-          python -m venv /tmp/wheel-venv
-          /tmp/wheel-venv/bin/pip install dist/*.whl pytest
-          /tmp/wheel-venv/bin/pytest tests -o addopts=""
+          python -m pip install wheel/*.whl pytest
+          python -c "from pathlib import Path; import sysconfig, bsm_test_utils; assert Path(bsm_test_utils.__file__).resolve().is_relative_to(Path(sysconfig.get_path('purelib')).resolve())"
+          cp "$GITHUB_WORKSPACE/tests/test_setup.py" .
+          cp "$GITHUB_WORKSPACE/tests/test_dummy_server_exec.py" .
+          python -I -m pytest -q test_setup.py test_dummy_server_exec.py

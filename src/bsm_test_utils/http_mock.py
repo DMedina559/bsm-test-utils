@@ -1,10 +1,14 @@
 import http.server
+import json
+import os
+import re
 import socketserver
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Union
 
 
 @dataclass
@@ -34,6 +38,8 @@ class RouteBehavior:
     redirect_to: Optional[str] = None
     content_length_override: Optional[int] = None
     omit_content_length: bool = False
+    accept_ranges: bool = False
+    etag: Optional[str] = None
     _call_count: int = field(default=0, init=False, repr=False)
 
     def next_status(self) -> int:
@@ -44,6 +50,21 @@ class RouteBehavior:
             code = self.status_code
         self._call_count += 1
         return code
+
+
+def _byte_range(header: str, length: int) -> Optional[tuple[int, int]]:
+    """Return a single range as start and exclusive stop, or None to ignore it."""
+    match = re.fullmatch(r"bytes=([0-9]{0,20})-([0-9]{0,20})", header.strip())
+    if match is None:
+        return None
+    first, last = match.groups()
+    if not first and not last:
+        return None
+    if not first:
+        return max(0, length - int(last)), length
+    start = int(first)
+    stop = min(length, int(last) + 1) if last else length
+    return start, stop
 
 
 class _ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -117,24 +138,21 @@ class MockHTTPServer:
             )
             return self._routes.get(clean_path)
 
-    def _resolve_payload(self, route: RouteBehavior, request_path: str) -> bytes:
+    def _open_payload(self, route: RouteBehavior, request_path: str):
         if route.body is not None:
-            return (
+            body = (
                 route.body.encode("utf-8")
                 if isinstance(route.body, str)
-                else bytes(route.body)
+                else route.body
             )
+            return nullcontext(None), body
         if route.file_path is not None and route.file_path.is_file():
-            return route.file_path.read_bytes()
+            return route.file_path.open("rb"), b""
         clean_rel = request_path.split("?", 1)[0].lstrip("/")
         candidate = (self.directory / clean_rel).resolve()
-        try:
-            candidate.relative_to(self.directory.resolve())
-        except ValueError:
-            return b""
-        if candidate.is_file():
-            return candidate.read_bytes()
-        return b""
+        if candidate.is_relative_to(self.directory.resolve()) and candidate.is_file():
+            return candidate.open("rb"), b""
+        return nullcontext(None), b""
 
     def start(self) -> "MockHTTPServer":
         """Starts the server in a background thread. Safe against duplicate calls."""
@@ -151,6 +169,14 @@ class MockHTTPServer:
                 def log_message(self, format: str, *args) -> None:
                     # Suppress noisy console logging during test runs
                     pass
+
+                def _send_empty_response(self, status: int, headers: Dict[str, str]):
+                    self.send_response(status)
+                    for key, value in headers.items():
+                        self.send_header(key, value)
+                    if status != 304:
+                        self.send_header("Content-Length", "0")
+                    self.end_headers()
 
                 def _handle_custom_or_default(self, is_head: bool = False) -> bool:
                     hdrs = {k: v for k, v in self.headers.items()}
@@ -169,7 +195,8 @@ class MockHTTPServer:
                             pass
                         return True
 
-                    status = route.next_status()
+                    with parent._lock:
+                        status = route.next_status()
                     if route.redirect_to and status in (301, 302, 303, 307, 308):
                         self.send_response(status)
                         self.send_header("Location", route.redirect_to)
@@ -179,44 +206,97 @@ class MockHTTPServer:
                         self.end_headers()
                         return True
 
-                    payload = parent._resolve_payload(route, self.path)
-                    full_len = len(payload)
-
-                    if route.truncate_bytes is not None:
-                        stream_bytes = payload[: route.truncate_bytes]
-                    else:
-                        stream_bytes = payload
-
-                    self.send_response(status)
-                    for k, v in route.headers.items():
-                        self.send_header(k, v)
-
-                    if not route.omit_content_length:
-                        reported_len = (
-                            route.content_length_override
-                            if route.content_length_override is not None
-                            else full_len
+                    stream, body = parent._open_payload(route, self.path)
+                    with stream as file:
+                        full_len = (
+                            os.fstat(file.fileno()).st_size if file else len(body)
                         )
-                        self.send_header("Content-Length", str(reported_len))
+                        headers = dict(route.headers)
+                        if route.etag is not None:
+                            headers["ETag"] = route.etag
+                            validators = self.headers.get("If-None-Match", "").split(
+                                ","
+                            )
+                            matches = any(
+                                tag.strip() == "*"
+                                or tag.strip().removeprefix("W/")
+                                == route.etag.removeprefix("W/")
+                                for tag in validators
+                            )
+                            if status == 200 and matches:
+                                self._send_empty_response(304, headers)
+                                return True
 
-                    self.end_headers()
+                        offset, end = 0, full_len
+                        if route.accept_ranges:
+                            headers["Accept-Ranges"] = "bytes"
+                            if_range = self.headers.get("If-Range")
+                            may_use_range = if_range is None or (
+                                if_range == route.etag and not if_range.startswith("W/")
+                            )
+                            if status == 200 and not is_head and may_use_range:
+                                requested = _byte_range(
+                                    self.headers.get("Range", ""), full_len
+                                )
+                                if requested is not None:
+                                    offset, end = requested
+                                    if offset >= end:
+                                        headers["Content-Range"] = f"bytes */{full_len}"
+                                        self._send_empty_response(416, headers)
+                                        return True
+                                    status = 206
+                                    headers["Content-Range"] = (
+                                        f"bytes {offset}-{end - 1}/{full_len}"
+                                    )
 
-                    if is_head:
-                        return True
+                        response_len = end - offset
+                        self.send_response(status)
+                        for key, value in headers.items():
+                            self.send_header(key, value)
+                        if not route.omit_content_length:
+                            reported_len = route.content_length_override
+                            self.send_header(
+                                "Content-Length",
+                                str(
+                                    response_len
+                                    if reported_len is None
+                                    else reported_len
+                                ),
+                            )
+                        self.end_headers()
+                        if is_head:
+                            return True
 
-                    try:
-                        if route.chunk_size and route.chunk_size > 0:
-                            for idx in range(0, len(stream_bytes), route.chunk_size):
-                                chunk = stream_bytes[idx : idx + route.chunk_size]
-                                self.wfile.write(chunk)
-                                self.wfile.flush()
-                                if route.chunk_delay_seconds > 0:
-                                    time.sleep(route.chunk_delay_seconds)
+                        limit = route.truncate_bytes
+                        if limit is None:
+                            remaining = response_len
+                        elif limit < 0:
+                            remaining = max(0, response_len + limit)
                         else:
-                            self.wfile.write(stream_bytes)
-                            self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        pass
+                            remaining = min(response_len, limit)
+                        throttle = route.chunk_size is not None and route.chunk_size > 0
+                        chunk_size = route.chunk_size if throttle else 64 * 1024
+                        assert chunk_size is not None
+                        if file and offset:
+                            file.seek(offset)
+                        try:
+                            while remaining:
+                                size = min(chunk_size, remaining)
+                                chunk = (
+                                    file.read(size)
+                                    if file
+                                    else body[offset : offset + size]
+                                )
+                                if not chunk:
+                                    break
+                                self.wfile.write(chunk)
+                                offset += len(chunk)
+                                remaining -= len(chunk)
+                                if throttle and route.chunk_delay_seconds > 0:
+                                    self.wfile.flush()
+                                    time.sleep(route.chunk_delay_seconds)
+                        except OSError:
+                            pass
 
                     if (
                         route.truncate_bytes is not None
@@ -237,7 +317,9 @@ class MockHTTPServer:
             self.port = self.server.server_address[1]
 
             self.thread = threading.Thread(
-                target=self.server.serve_forever, daemon=True
+                target=self.server.serve_forever,
+                kwargs={"poll_interval": 0.02},
+                daemon=True,
             )
             self.thread.start()
             return self
@@ -269,3 +351,48 @@ class MockHTTPServer:
     def url(self) -> str:
         """Returns the base URL of the server."""
         return f"http://127.0.0.1:{self.port}"
+
+
+class BedrockDownloadCatalog:
+    """Publish configurable release links backed by reusable local archives."""
+
+    def __init__(self, server: MockHTTPServer, archives: Mapping[str, Path]):
+        self.server = server
+        self.archives = dict(archives)
+
+    def publish(
+        self, *, stable: str = "1.26.45.1", preview: str = "1.26.60.23"
+    ) -> MockHTTPServer:
+        links = []
+        releases = (
+            ("windows", "win", "Windows", stable, False),
+            ("linux", "linux", "Linux", stable, False),
+            ("windows", "win", "Windows", preview, True),
+            ("linux", "linux", "Linux", preview, True),
+        )
+        for platform, slug, download_type, version, is_preview in releases:
+            suffix = "-preview" if is_preview else ""
+            path = f"/bedrockdedicatedserver/bin-{slug}{suffix}/bedrock-server-{version}.zip"
+            self.server.add_route(
+                path, RouteBehavior(file_path=self.archives[platform])
+            )
+            links.append(
+                {
+                    "downloadType": f"serverBedrock{'Preview' if is_preview else ''}{download_type}",
+                    "downloadUrl": f"{self.server.url}{path}",
+                }
+            )
+        links.append(
+            {
+                "downloadType": "serverJar",
+                "downloadUrl": f"{self.server.url}/server.jar",
+            }
+        )
+        self.server.add_route(
+            "/api/v1.0/download/links",
+            RouteBehavior(
+                body=json.dumps({"result": {"links": links}}),
+                headers={"Content-Type": "application/json"},
+            ),
+        )
+        return self.server

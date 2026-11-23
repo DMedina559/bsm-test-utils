@@ -174,3 +174,54 @@ with MockHTTPServer(directory="./served") as server:
 | `valid_behavior_pack_zip` | `Path` | Path to a valid behavior pack `.mcpack` file. |
 | `valid_mcaddon_zip` | `Path` | Path to a valid `.mcaddon` bundle. |
 | `valid_mcworld_zip` | `Path` | Path to a valid `.mcworld` archive with embedded packs. |
+
+## Process, download, and backup scenarios
+
+Use the `dummy_server_install` pytest fixture for a writable copy of the host
+dummy server. It sets `BSM_DUMMY_STARTUP_DELAY_MS=0` unless the environment
+already provides a delay. Set the variable in a test or pass
+`--startup-delay-ms` to exercise delayed readiness. The executable also
+supports `--save-files-from-disk` or `BSM_DUMMY_SAVE_FILES_FROM_DISK=1` to
+report actual world paths and byte counts when a manager issues `save query`
+after `save hold`.
+
+Use `DummyServerProcess` when the test owns the process. It drains both pipes
+and captures recent stdout and stderr for timeout errors.
+
+```python
+from bsm_test_utils import DummyServerProcess
+
+with DummyServerProcess(binary, cwd=server_dir) as server:
+    server.wait_for_line("Server started.")
+    server.send("__DUMMY__ PLAYER_JOIN Alex xuid=1234567890123456")
+    server.wait_for_line("Player connected: Alex")
+    server.send("stop")
+    assert server.wait() == 0
+```
+
+When the manager owns the process, point `BSM_DUMMY_SCENARIO` or `--scenario`
+at a JSON file. Steps run once, in file order for each trigger. A
+`ready` step runs after startup output. An `after_command` step runs
+after the matching stdin command completes.
+
+```json
+[
+  {"when": "ready", "actions": ["__DUMMY__ PLAYER_JOIN Alex"]},
+  {
+    "when": "after_command",
+    "command": "save hold",
+    "actions": ["__DUMMY__ STDERR_BURST 1 16"]
+  }
+]
+```
+
+The `bedrock_download_catalog` fixture can publish successive versions with
+`publish(stable="1.2.3", preview="1.2.4")`. Managers can re-fetch the links
+endpoint while existing download URLs continue to serve their original
+archives. Catalog fixtures cache one ZIP per target OS per pytest worker.
+To test conditional or resumable downloads, configure a route with
+`RouteBehavior(file_path=archive, accept_ranges=True, etag='"version-1"')`.
+
+Use `measure_async_backup_restore` for awaitable backup and restore callbacks.
+It returns the same summary as `measure_backup_restore`. To generate large
+repeatable datasets quickly, use `DatasetSpec(profile="seeded-random")`.

@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,23 +17,25 @@ import (
 )
 
 type ServerConfig struct {
-	MockCrash      bool
-	StartupFailure bool
-	NeverReady     bool
-	StartupDelayMs int
-	StopDelayMs    int
-	IgnoreStop     bool
-	ExitCode       int
-	CrashExitCode  int
-	CrashAfterMs   int
-	SaveReadyPolls int
-	SaveHoldFail   bool
-	SaveQueryFail  bool
-	SaveResumeFail bool
-	SaveMutateFile string
-	LevelName      string
-	CommandLogFile string
-	SaveFilesCsv   string
+	MockCrash         bool
+	StartupFailure    bool
+	NeverReady        bool
+	StartupDelayMs    int
+	StopDelayMs       int
+	IgnoreStop        bool
+	ExitCode          int
+	CrashExitCode     int
+	CrashAfterMs      int
+	SaveReadyPolls    int
+	SaveHoldFail      bool
+	SaveQueryFail     bool
+	SaveResumeFail    bool
+	SaveMutateFile    string
+	LevelName         string
+	CommandLogFile    string
+	SaveFilesCsv      string
+	SaveFilesFromDisk bool
+	ScenarioPath      string
 }
 
 type ServerState struct {
@@ -73,18 +77,41 @@ func (s *ServerState) recordCommand(cmd string) {
 	}
 }
 
-func (s *ServerState) getSaveFileList() string {
+func (s *ServerState) getSaveFileList() (string, error) {
 	if s.config.SaveFilesCsv != "" {
-		return s.config.SaveFilesCsv
+		return s.config.SaveFilesCsv, nil
 	}
 	lvl := s.config.LevelName
 	if lvl == "" {
 		lvl = "Bedrock level"
 	}
+	if s.config.SaveFilesFromDisk {
+		world := filepath.Join("worlds", lvl)
+		var files []string
+		err := filepath.WalkDir(world, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !entry.Type().IsRegular() {
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel("worlds", path)
+			if err != nil {
+				return err
+			}
+			files = append(files, fmt.Sprintf("%s:%d", filepath.ToSlash(rel), info.Size()))
+			return nil
+		})
+		return strings.Join(files, ", "), err
+	}
 	return fmt.Sprintf(
 		"%s/db/000003.ldb:1240, %s/db/MANIFEST-000002:192, %s/level.dat:2048, %s/levelname.txt:13",
 		lvl, lvl, lvl, lvl,
-	)
+	), nil
 }
 
 func (s *ServerState) mutateLiveFileIfConfigured() {
@@ -163,12 +190,65 @@ func parsePlayerArgs(rest string) (string, string, string) {
 	return name, xuid, pfid
 }
 
+// Scenario actions use the same command vocabulary as stdin. Each step runs once.
+type scenarioStep struct {
+	When    string   `json:"when"`
+	Command string   `json:"command"`
+	Actions []string `json:"actions"`
+	done    bool
+}
+
+func loadScenario(path string) ([]scenarioStep, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var steps []scenarioStep
+	if err := json.Unmarshal(data, &steps); err != nil {
+		return nil, err
+	}
+	for i, step := range steps {
+		validTrigger := step.When == "ready" || (step.When == "after_command" && step.Command != "")
+		if !validTrigger || len(step.Actions) == 0 {
+			return nil, fmt.Errorf("invalid scenario step %d", i+1)
+		}
+	}
+	return steps, nil
+}
+
+func (s *ServerState) runScenario(steps []scenarioStep, when, command string) {
+	for i := range steps {
+		step := &steps[i]
+		if step.done || step.When != when || (when == "after_command" && step.Command != command) {
+			continue
+		}
+		step.done = true
+		for _, action := range step.Actions {
+			if exit, code := s.processCommand(action); exit {
+				os.Exit(code)
+			}
+		}
+	}
+}
+
 func main() {
 	var cfg ServerConfig
 	flag.BoolVar(&cfg.MockCrash, "mock-crash", false, "Simulate a server crash immediately upon startup")
 	flag.BoolVar(&cfg.StartupFailure, "startup-failure", false, "Simulate a fatal startup failure before world load")
 	flag.BoolVar(&cfg.NeverReady, "never-ready", false, "Start up without ever emitting 'Server started.'")
-	flag.IntVar(&cfg.StartupDelayMs, "startup-delay-ms", 1000, "Delay in ms for each startup phase")
+	startupDelay := 1000
+	if raw := os.Getenv("BSM_DUMMY_STARTUP_DELAY_MS"); raw != "" {
+		delay, err := strconv.Atoi(raw)
+		if err != nil || delay < 0 {
+			fmt.Fprintln(os.Stderr, "BSM_DUMMY_STARTUP_DELAY_MS must be a non-negative integer")
+			os.Exit(2)
+		}
+		startupDelay = delay
+	}
+	flag.IntVar(&cfg.StartupDelayMs, "startup-delay-ms", startupDelay, "Delay in ms for each startup phase")
 	flag.IntVar(&cfg.StopDelayMs, "stop-delay-ms", 0, "Delay in ms before exiting on stop")
 	flag.BoolVar(&cfg.IgnoreStop, "ignore-stop", false, "Ignore the 'stop' command")
 	flag.IntVar(&cfg.ExitCode, "exit-code", 0, "Exit code on normal stop")
@@ -182,7 +262,15 @@ func main() {
 	flag.StringVar(&cfg.LevelName, "level-name", "Bedrock level", "World level name")
 	flag.StringVar(&cfg.CommandLogFile, "command-log-file", "", "File path to append received stdin commands")
 	flag.StringVar(&cfg.SaveFilesCsv, "save-files", "", "Custom file list returned by save query")
+	flag.BoolVar(&cfg.SaveFilesFromDisk, "save-files-from-disk", os.Getenv("BSM_DUMMY_SAVE_FILES_FROM_DISK") == "1", "List actual regular world files and their sizes on save query")
+	flag.StringVar(&cfg.ScenarioPath, "scenario", os.Getenv("BSM_DUMMY_SCENARIO"), "JSON file of scripted actions")
 	flag.Parse()
+
+	steps, err := loadScenario(cfg.ScenarioPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "loading scenario:", err)
+		os.Exit(2)
+	}
 
 	if cfg.MockCrash {
 		logPrint("ERROR", "CRASH: Segfault simulating server failure")
@@ -245,6 +333,9 @@ func main() {
 	}
 
 	state := newServerState(cfg)
+	if !cfg.NeverReady {
+		state.runScenario(steps, "ready", "")
+	}
 
 	if cfg.CrashAfterMs > 0 {
 		go func(delayMs int, code int) {
@@ -265,6 +356,7 @@ func main() {
 		if shouldExit {
 			os.Exit(exitCode)
 		}
+		state.runScenario(steps, "after_command", text)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -337,8 +429,13 @@ func (s *ServerState) processCommand(text string) (bool, int) {
 			logPrint("INFO", "The save is in progress...")
 			return false, 0
 		}
+		files, err := s.getSaveFileList()
+		if err != nil {
+			logPrint("ERROR", fmt.Sprintf("Save query failed: %v", err))
+			return false, 0
+		}
 		logPrint("INFO", "Data saved. Files are now ready to be copied.")
-		fmt.Println(s.getSaveFileList())
+		fmt.Println(files)
 		return false, 0
 	}
 

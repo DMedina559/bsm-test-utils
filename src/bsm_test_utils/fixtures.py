@@ -1,4 +1,5 @@
-import json
+import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -13,95 +14,49 @@ from .addons import (
     create_resource_pack,
 )
 from .datasets import DatasetResult, DatasetSpec, create_server_dataset
-from .dummy_server import create_server_zip
-from .http_mock import MockHTTPServer
+from .dummy_server import create_server_zip, setup_dummy_server
+from .http_mock import BedrockDownloadCatalog, MockHTTPServer
+
+
+@pytest.fixture(scope="session")
+def bedrock_download_archives(tmp_path_factory):
+    """Build one immutable release ZIP per OS per pytest worker."""
+    directory = tmp_path_factory.mktemp("bedrock-downloads")
+    return {
+        target: create_server_zip(
+            directory,
+            is_windows=target == "windows",
+            machine="amd64",
+            filename=f"{target}.zip",
+        )
+        for target in ("windows", "linux")
+    }
 
 
 @pytest.fixture
-def mock_bedrock_api(mock_http_server, dummy_server_zip):
-    """
-    Sets up a mock Bedrock download API on the mock HTTP server.
-    It serves standard and preview dummy server zips for Windows and Linux,
-    and provides the download/links endpoint pointing to these local zips.
-    """
-    api_dir = mock_http_server.directory / "api" / "v1.0" / "download"
-    api_dir.mkdir(parents=True, exist_ok=True)
+def bedrock_download_catalog(mock_http_server, bedrock_download_archives):
+    return BedrockDownloadCatalog(mock_http_server, bedrock_download_archives)
 
-    base_url = mock_http_server.url
-    versions = {"stable": "1.26.45.1", "preview": "1.26.60.23"}
 
-    def _create_and_map(
-        target_subpath: str,
-        version: str,
-        is_preview: bool,
-        is_windows: bool,
-        filename: str,
-    ) -> str:
-        target_dir = mock_http_server.directory / target_subpath
-        target_dir.mkdir(parents=True, exist_ok=True)
-        dummy_server_zip(
-            target_dir=target_dir,
-            version=version,
-            is_preview=is_preview,
-            is_windows=is_windows,
-            filename=filename,
-        )
-        return f"{base_url}/{target_subpath}/{filename}"
+@pytest.fixture
+def mock_bedrock_api(bedrock_download_catalog):
+    """Serve the default stable and preview download catalog."""
+    return bedrock_download_catalog.publish()
 
-    win_stable = _create_and_map(
-        "bedrockdedicatedserver/bin-win",
-        versions["stable"],
-        False,
-        True,
-        f"bedrock-server-{versions['stable']}.zip",
+
+@pytest.fixture(scope="session")
+def dummy_server_template(tmp_path_factory):
+    """Install the host dummy once for tests that do not exercise ZIP extraction."""
+    return setup_dummy_server(tmp_path_factory.mktemp("dummy-bedrock-template"))
+
+
+@pytest.fixture
+def dummy_server_install(dummy_server_template, tmp_path, monkeypatch):
+    """Copy the dummy installation and default manager-launched processes to fast startup."""
+    monkeypatch.setenv(
+        "BSM_DUMMY_STARTUP_DELAY_MS", os.environ.get("BSM_DUMMY_STARTUP_DELAY_MS", "0")
     )
-    linux_stable = _create_and_map(
-        "bedrockdedicatedserver/bin-linux",
-        versions["stable"],
-        False,
-        False,
-        f"bedrock-server-{versions['stable']}.zip",
-    )
-    win_preview = _create_and_map(
-        "bedrockdedicatedserver/bin-win-preview",
-        versions["preview"],
-        True,
-        True,
-        f"bedrock-server-{versions['preview']}.zip",
-    )
-    linux_preview = _create_and_map(
-        "bedrockdedicatedserver/bin-linux-preview",
-        versions["preview"],
-        True,
-        False,
-        f"bedrock-server-{versions['preview']}.zip",
-    )
-
-    links_data = {
-        "result": {
-            "links": [
-                {"downloadType": "serverBedrockWindows", "downloadUrl": win_stable},
-                {"downloadType": "serverBedrockLinux", "downloadUrl": linux_stable},
-                {
-                    "downloadType": "serverBedrockPreviewWindows",
-                    "downloadUrl": win_preview,
-                },
-                {
-                    "downloadType": "serverBedrockPreviewLinux",
-                    "downloadUrl": linux_preview,
-                },
-                {
-                    "downloadType": "serverJar",
-                    "downloadUrl": f"{base_url}/server.jar",
-                },
-            ]
-        }
-    }
-
-    with open(api_dir / "links", "w", encoding="utf-8") as f:
-        json.dump(links_data, f)
-
-    return mock_http_server
+    return shutil.copytree(dummy_server_template, tmp_path / "dummy-bedrock")
 
 
 @pytest.fixture
@@ -141,7 +96,9 @@ def server_dataset_factory(tmp_path):
         **overrides,
     ) -> DatasetResult:
         dest = target_dir if target_dir is not None else tmp_path / "dataset"
-        effective_spec = spec or DatasetSpec(**overrides)
+        if spec is not None and overrides:
+            raise TypeError("Pass either a dataset spec or keyword overrides")
+        effective_spec = spec if spec is not None else DatasetSpec(**overrides)
         return create_server_dataset(dest, spec=effective_spec)
 
     return _factory

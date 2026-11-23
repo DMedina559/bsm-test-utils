@@ -44,3 +44,31 @@ def test_mock_bedrock_api_fixture(mock_bedrock_api):
 
     assert (extract_dir / "server.properties").exists()
     assert (extract_dir / "bedrock_server").exists()
+
+
+def test_download_catalog_changes_version_and_keeps_previous_urls(
+    bedrock_download_catalog,
+):
+    server = bedrock_download_catalog.publish(stable="1.2.3")
+    endpoint = f"{server.url}/api/v1.0/download/links"
+
+    def linux_release():
+        with urllib.request.urlopen(endpoint, timeout=5) as response:
+            data = json.load(response)
+        return next(
+            entry["downloadUrl"]
+            for entry in data["result"]["links"]
+            if entry["downloadType"] == "serverBedrockLinux"
+        )
+
+    original = linux_release()
+    assert original.endswith("1.2.3.zip")
+    bedrock_download_catalog.publish(stable="1.2.4")
+    updated = linux_release()
+    assert updated.endswith("1.2.4.zip")
+    request = urllib.request.Request(updated, method="HEAD")
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert int(response.headers["Content-Length"]) > 0
+        assert response.read() == b""
+    with urllib.request.urlopen(original, timeout=5) as response:
+        assert response.read(2) == b"PK"

@@ -96,3 +96,43 @@ def test_mock_http_server_truncation_headers_and_concurrency(tmp_path):
             results = list(pool.map(_fetch_throttled, range(4)))
 
         assert all(res == payload for res in results)
+
+
+def test_file_route_supports_range_and_etag(tmp_path):
+    payload = tmp_path / "range.bin"
+    payload.write_bytes(b"0123456789")
+    with MockHTTPServer(tmp_path) as server:
+        server.add_route(
+            "/range.bin",
+            RouteBehavior(file_path=payload, accept_ranges=True, etag='"first"'),
+        )
+        url = f"{server.url}/range.bin"
+
+        def fetch(headers):
+            return urllib.request.urlopen(
+                urllib.request.Request(url, headers=headers), timeout=5
+            )
+
+        with fetch({"Range": "bytes=2-5", "If-Range": '"first"'}) as response:
+            assert response.status == 206
+            assert response.headers["Content-Range"] == "bytes 2-5/10"
+            assert response.read() == b"2345"
+
+        with fetch({"Range": "bytes=-3"}) as response:
+            assert response.read() == b"789"
+
+        with fetch({"Range": "bytes=2-", "If-Range": '"older"'}) as response:
+            assert response.status == 200
+            assert response.read() == b"0123456789"
+
+        with pytest.raises(urllib.error.HTTPError) as unsatisfiable:
+            fetch({"Range": "bytes=12-"})
+        with unsatisfiable.value as response:
+            assert response.code == 416
+            assert response.headers["Content-Range"] == "bytes */10"
+
+        with pytest.raises(urllib.error.HTTPError) as cached:
+            fetch({"If-None-Match": 'W/"first"'})
+        with cached.value as response:
+            assert response.code == 304
+            assert response.read() == b""

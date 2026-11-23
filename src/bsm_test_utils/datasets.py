@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import os
 import platform
@@ -7,9 +8,20 @@ import statistics
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
-ContentProfile = Literal["compressible", "random", "mixed"]
+ContentProfile = Literal["compressible", "random", "mixed", "seeded-random"]
 SizeDistribution = Literal["uniform", "many_small", "few_large", "mixed"]
 PresetName = Literal["many-small-files", "few-large-files", "mixed-server"]
 
@@ -287,6 +299,15 @@ def _stream_synthetic_file(
                 if hasher:
                     hasher.update(chunk)
                 remaining -= len(chunk)
+
+        if profile == "seeded-random":
+            while remaining:
+                payload = rng.randbytes(min(STREAM_CHUNK_BYTES, remaining))
+                f.write(payload)
+                if hasher:
+                    hasher.update(payload)
+                remaining -= len(payload)
+            return size, hasher.hexdigest() if hasher else None
 
         block_index = 0
         while remaining > 0:
@@ -733,71 +754,132 @@ def measure_backup_restore(
     :param warmup_runs: Number of unrecorded warmup iterations before measurement.
     :param verify_restore: Whether to verify the restored tree against source_dir after timing.
     """
+    _validate_benchmark_runs(runs, warmup_runs)
+    src_path = Path(source_dir).resolve()
+    baseline = build_tree_inventory(src_path, compute_hashes=verify_restore)
+    measured = []
+    for i in range(warmup_runs + runs):
+        start = time.perf_counter()
+        artifact = backup_fn(src_path, i)
+        backed_up = time.perf_counter()
+        restored = Path(restore_fn(i))
+        finished = time.perf_counter()
+        result = _benchmark_result(
+            baseline,
+            artifact,
+            restored,
+            backed_up - start,
+            finished - backed_up,
+            verify_restore,
+            i,
+        )
+        if i >= warmup_runs:
+            measured.append(result)
+    return _benchmark_summary(baseline, measured, warmup_runs, dataset_details)
+
+
+async def measure_async_backup_restore(
+    source_dir: Union[str, Path],
+    backup_fn: Callable[[Path, int], Awaitable[Optional[Union[str, Path, int]]]],
+    restore_fn: Callable[[int], Awaitable[Path]],
+    *,
+    runs: int = 1,
+    warmup_runs: int = 0,
+    verify_restore: bool = True,
+    dataset_details: Optional[Dict[str, Any]] = None,
+) -> BenchmarkSummary:
+    """Measure async callbacks and verify restored content outside timed sections."""
+    _validate_benchmark_runs(runs, warmup_runs)
+    src_path = Path(source_dir).resolve()
+    baseline = await asyncio.to_thread(
+        build_tree_inventory, src_path, compute_hashes=verify_restore
+    )
+    measured = []
+    for i in range(warmup_runs + runs):
+        start = time.perf_counter()
+        artifact = await backup_fn(src_path, i)
+        backed_up = time.perf_counter()
+        restored = Path(await restore_fn(i))
+        finished = time.perf_counter()
+        result = await asyncio.to_thread(
+            _benchmark_result,
+            baseline,
+            artifact,
+            restored,
+            backed_up - start,
+            finished - backed_up,
+            verify_restore,
+            i,
+        )
+        if i >= warmup_runs:
+            measured.append(result)
+    return _benchmark_summary(baseline, measured, warmup_runs, dataset_details)
+
+
+def _validate_benchmark_runs(runs: int, warmup_runs: int) -> None:
     if runs < 1:
         raise ValueError("runs must be >= 1")
     if warmup_runs < 0:
         raise ValueError("warmup_runs must be >= 0")
 
-    src_path = Path(source_dir).resolve()
-    baseline_inv = build_tree_inventory(src_path, compute_hashes=verify_restore)
 
-    total_iterations = warmup_runs + runs
-    measured: List[BenchmarkRunResult] = []
-
-    for i in range(total_iterations):
-        t0 = time.perf_counter()
-        backup_artifact = backup_fn(src_path, i)
-        t1 = time.perf_counter()
-
-        restored_dir = Path(restore_fn(i))
-        t2 = time.perf_counter()
-
-        backup_sec = max(1e-9, t1 - t0)
-        restore_sec = max(1e-9, t2 - t1)
-        total_sec = backup_sec + restore_sec
-
-        archive_bytes: Optional[int] = None
-        if isinstance(backup_artifact, int):
-            archive_bytes = backup_artifact
-        elif isinstance(backup_artifact, (str, Path)):
-            art_path = Path(backup_artifact)
-            if art_path.is_file():
-                archive_bytes = art_path.stat().st_size
-            elif art_path.is_dir():
-                archive_bytes = sum(
-                    p.stat().st_size for p in art_path.rglob("*") if p.is_file()
-                )
-
-        comp_ratio: Optional[float] = None
-        if archive_bytes is not None and baseline_inv.total_bytes > 0:
-            comp_ratio = archive_bytes / baseline_inv.total_bytes
-
-        verified_flag: Optional[bool] = None
-        if verify_restore:
-            comp = compare_trees(baseline_inv, restored_dir, check_hashes=True)
-            verified_flag = comp.ok
-            if not comp.ok:
-                raise AssertionError(
-                    f"Restore verification failed on iteration {i}: {comp.summary()}"
-                )
-
-        if i >= warmup_runs:
-            mib = baseline_inv.total_bytes / (1024 * 1024)
-            measured.append(
-                BenchmarkRunResult(
-                    backup_seconds=backup_sec,
-                    restore_seconds=restore_sec,
-                    total_seconds=total_sec,
-                    source_files=baseline_inv.total_files,
-                    source_bytes=baseline_inv.total_bytes,
-                    archive_bytes=archive_bytes,
-                    compression_ratio=comp_ratio,
-                    backup_throughput_mib_s=mib / backup_sec,
-                    restore_throughput_mib_s=mib / restore_sec,
-                    verified=verified_flag,
-                )
+def _benchmark_result(
+    baseline_inv: TreeInventory,
+    backup_artifact: Optional[Union[str, Path, int]],
+    restored_dir: Path,
+    backup_sec: float,
+    restore_sec: float,
+    verify_restore: bool,
+    i: int,
+) -> BenchmarkRunResult:
+    backup_sec = max(1e-9, backup_sec)
+    restore_sec = max(1e-9, restore_sec)
+    archive_bytes: Optional[int] = None
+    if isinstance(backup_artifact, int):
+        archive_bytes = backup_artifact
+    elif isinstance(backup_artifact, (str, Path)):
+        art_path = Path(backup_artifact)
+        if art_path.is_file():
+            archive_bytes = art_path.stat().st_size
+        elif art_path.is_dir():
+            archive_bytes = sum(
+                p.stat().st_size for p in art_path.rglob("*") if p.is_file()
             )
 
+    comp_ratio: Optional[float] = None
+    if archive_bytes is not None and baseline_inv.total_bytes > 0:
+        comp_ratio = archive_bytes / baseline_inv.total_bytes
+
+    verified_flag: Optional[bool] = None
+    if verify_restore:
+        comp = compare_trees(baseline_inv, restored_dir, check_hashes=True)
+        verified_flag = comp.ok
+        if not comp.ok:
+            raise AssertionError(
+                f"Restore verification failed on iteration {i}: {comp.summary()}"
+            )
+
+    mib = baseline_inv.total_bytes / (1024 * 1024)
+    return BenchmarkRunResult(
+        backup_seconds=backup_sec,
+        restore_seconds=restore_sec,
+        total_seconds=backup_sec + restore_sec,
+        source_files=baseline_inv.total_files,
+        source_bytes=baseline_inv.total_bytes,
+        archive_bytes=archive_bytes,
+        compression_ratio=comp_ratio,
+        backup_throughput_mib_s=mib / backup_sec,
+        restore_throughput_mib_s=mib / restore_sec,
+        verified=verified_flag,
+    )
+
+
+def _benchmark_summary(
+    baseline_inv: TreeInventory,
+    measured: List[BenchmarkRunResult],
+    warmup_runs: int,
+    dataset_details: Optional[Dict[str, Any]],
+) -> BenchmarkSummary:
     b_times = [r.backup_seconds for r in measured]
     r_times = [r.restore_seconds for r in measured]
     t_times = [r.total_seconds for r in measured]
