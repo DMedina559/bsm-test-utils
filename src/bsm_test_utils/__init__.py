@@ -32,6 +32,7 @@ from .datasets import (
     build_tree_inventory,
     compare_trees,
     create_server_dataset,
+    measure_async_backup_restore,
     measure_backup_restore,
     mutate_server_dataset,
 )
@@ -46,15 +47,23 @@ from .dummy_server import (
     setup_dummy_server,
     validate_required_assets,
 )
-from .http_mock import MockHTTPServer, RecordedRequest, RouteBehavior
+from .http_mock import (
+    BedrockDownloadCatalog,
+    MockHTTPServer,
+    RecordedRequest,
+    RouteBehavior,
+)
+from .process import DummyServerProcess
 
 __all__ = [
+    "BedrockDownloadCatalog",
     "BenchmarkRunResult",
     "BenchmarkSummary",
     "BuiltPack",
     "DatasetMutationSummary",
     "DatasetResult",
     "DatasetSpec",
+    "DummyServerProcess",
     "FileEntry",
     "MockHTTPServer",
     "PackFaults",
@@ -83,6 +92,7 @@ __all__ = [
     "create_server_zip",
     "create_traversal_archive",
     "get_package_data_dir",
+    "measure_async_backup_restore",
     "measure_backup_restore",
     "mutate_server_dataset",
     "resolve_platform_spec",

@@ -166,3 +166,35 @@ def test_large_dataset_benchmark_opt_in(tmp_path, request):
         ),
     )
     assert (src_dir / "worlds").is_dir()
+
+
+def test_async_benchmark_verifies_seeded_dataset(tmp_path, server_dataset_factory):
+    import asyncio
+
+    from bsm_test_utils import measure_async_backup_restore
+
+    spec = DatasetSpec(file_count=4, total_bytes=4096, profile="seeded-random")
+    source = tmp_path / "source"
+    server_dataset_factory(source, spec=spec)
+    clone = tmp_path / "clone"
+    server_dataset_factory(clone, spec=spec)
+    assert_trees_equal(source, clone)
+    with pytest.raises(TypeError, match="either"):
+        server_dataset_factory(spec=spec, file_count=8)
+
+    async def backup(source_dir, index):
+        return await asyncio.to_thread(
+            shutil.copytree, source_dir, tmp_path / f"backup-{index}"
+        )
+
+    async def restore(index):
+        return await asyncio.to_thread(
+            shutil.copytree, tmp_path / f"backup-{index}", tmp_path / f"restore-{index}"
+        )
+
+    result = asyncio.run(
+        measure_async_backup_restore(source, backup, restore, runs=2, warmup_runs=1)
+    )
+    assert len(result.runs) == 2
+    assert all(run.verified for run in result.runs)
+    assert result.archive_bytes == spec.total_bytes
